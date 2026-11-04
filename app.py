@@ -120,4 +120,96 @@ def generate_nephro_letter_gemini(api_key, anonymized_transcript, lab_data):
     system_instruction = """
     Du bist ein hochqualifizierter medizinischer Fachassistent für Nephrologie und Dialyse. 
     Erstelle aus den bereitgestellten Visiten-Notizen und Labor-/Dialysedaten einen professionellen, 
-    strukturierten nephrolog
+    strukturierten nephrologischen Arztbrief auf Deutsch.
+    
+    Gliederung des Briefes:
+    1. Anamnese & Aktueller Status
+    2. Dialysestatus / Therapie (falls vorhanden)
+    3. Labor- & Befundbewertung
+    4. Zusammenfassende Beurteilung & Empfehlungen (Prozedere)
+    
+    STRIKTE DATENSCHUTZ- UND PLATZHALTER-REGELN:
+    - Der Text enthält anonymisierte Tokens in eckigen Klammern (z. B. [PERSON_1], [GEBURTSDATUM_1], [ORT_1]).
+    - Du MUSST diese exakten Platzhalter im generierten Brief WORTWÖRTLICH an den passenden Stellen beibehalten.
+    - Erfinde KEINE Fantasienamen und füge keine echten Personennamen ein. 
+    - Gib ausschließlich den fertig formatierten Arztbrief zurück.
+    """
+    
+    user_content = f"""
+    [LABOR- UND DIALYSEDATEN]
+    {lab_data if lab_data.strip() else "Keine gesonderten Labordaten angegeben."}
+    
+    [VISITEN-TRANSKRIPT]
+    {anonymized_transcript}
+    """
+
+    candidate_models = [
+        'gemini-3.8-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-pro-preview'
+    ]
+
+    last_exception = None
+    for model_name in candidate_models:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=user_content,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.1,
+                ),
+            )
+            return response.text, model_name
+        except Exception as e:
+            last_exception = e
+
+    raise RuntimeError(f"Keines der verfügbaren Gemini-Modelle konnte erreicht werden. Letzter Fehler: {last_exception}")
+
+# ---------------------------------------------------------
+# BENUTZEROBERFLÄCHE (STREAMLIT)
+# ---------------------------------------------------------
+st.title("🛡️ NephroDoc AI (Web Edition)")
+st.caption("Privacy-by-Design: Lokale Anonymisierung vor Cloud-Übergabe an Gemini")
+
+api_key_input = st.text_input("Google AI Studio API Key:", type="password", value=os.getenv("GEMINI_API_KEY", ""))
+
+st.divider()
+
+transcript = st.text_area("1. Visiten-Transkript (aus MacWhisper einfügen):", height=150)
+
+uploaded_file = st.file_uploader("2. Laborwerte / Dialyseprotokoll (PDF hochladen):", type=["pdf"])
+lab_data_from_pdf = ""
+if uploaded_file is not None:
+    lab_data_from_pdf = extract_text_from_pdf(uploaded_file)
+    st.success(f"PDF '{uploaded_file.name}' erfolgreich ausgelesen!")
+
+lab_data_manual = st.text_area("Oder Labordaten manuell eingeben/ergänzen:", value=lab_data_from_pdf, height=100)
+
+if st.button("🚀 Anonymisieren & Arztbrief generieren", type="primary"):
+    if not api_key_input:
+        st.error("Bitte gib deinen Google AI Studio API-Key ein.")
+    elif not transcript:
+        st.error("Das Visiten-Transkript darf nicht leer sein.")
+    else:
+        with st.spinner("Verarbeite Daten und generiere Arztbrief..."):
+            try:
+                anonymized_text, mapping = anonymize_text(transcript)
+                
+                st.subheader("🔍 Anonymisierungs-Protokoll (Mapping)")
+                if mapping:
+                    for token, original in mapping.items():
+                        st.text(f"{token} ➔ {original}")
+                else:
+                    st.info("Keine sensiblen Daten erkannt.")
+                
+                raw_letter, active_model = generate_nephro_letter_gemini(api_key_input, anonymized_text, lab_data_manual)
+                final_letter = deanonymize_text(raw_letter, mapping)
+                
+                st.subheader("3. Fertiger Nephrologischer Arztbrief (Re-Anonymisiert)")
+                st.code(final_letter, language="markdown")
+                st.success(f"Erfolgreich generiert mit Modell: {active_model}")
+                
+            except Exception as e:
+                st.error(f"Fehler bei der Verarbeitung: {e}")
