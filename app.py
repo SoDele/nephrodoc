@@ -2,15 +2,23 @@ import re
 import os
 import streamlit as st
 import spacy
-from google import genai
-from google.genai import types
+import requests
+import json
 import pypdf
-import subprocess
-try:
-    nlp = spacy.load("de_core_news_sm")
-except OSError:
-    subprocess.run(["python", "-m", "spacy", "download", "de_core_news_sm"])
-    nlp = spacy.load("de_core_news_sm")
+
+# ---------------------------------------------------------
+# NLP SETUP (SPACY DEUTSCH)
+# ---------------------------------------------------------
+@st.cache_resource
+def load_nlp():
+    try:
+        return spacy.load("de_core_news_sm")
+    except OSError:
+        import subprocess
+        subprocess.run(["pip", "install", "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl"])
+        return spacy.load("de_core_news_sm")
+
+nlp = load_nlp()
 
 # ---------------------------------------------------------
 # PAGE CONFIG & AUTHENTICATION
