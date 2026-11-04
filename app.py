@@ -71,9 +71,53 @@ def anonymize_text(text):
     person_idx = 1
     loc_idx = 1
     
-    # Wörter, die spaCy oft fälschlicherweise als Person erkennt
     ignore_words = {"geb", "geb.", "m", "w", "dr", "prof"}
     
     for ent in sorted(doc.ents, key=lambda e: e.start_char, reverse=True):
         cleaned_text = ent.text.strip().lower()
-        if "[" in ent.text or "]" in ent.text
+        if "[" in ent.text or "]" in ent.text or "_" in ent.text or cleaned_text in ignore_words:
+            continue
+            
+        if ent.label_ == "PER":
+            token = f"[PERSON_{person_idx}]"
+            mapping[token] = ent.text
+            anonymized = anonymized[:ent.start_char] + token + anonymized[ent.end_char:]
+            person_idx += 1
+        elif ent.label_ == "LOC":
+            token = f"[ORT_{loc_idx}]"
+            mapping[token] = ent.text
+            anonymized = anonymized[:ent.start_char] + token + anonymized[ent.end_char:]
+            loc_idx += 1
+            
+    return anonymized, mapping
+
+def deanonymize_text(text, mapping):
+    result = text
+    for token, original_value in mapping.items():
+        result = result.replace(token, original_value)
+        raw_token = token.strip("[]")
+        result = re.sub(rf'\b{re.escape(raw_token)}\b', original_value, result)
+    return result
+
+def extract_text_from_pdf(uploaded_file):
+    text = ""
+    try:
+        reader = pypdf.PdfReader(uploaded_file)
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
+    except Exception as e:
+        st.error(f"Fehler beim PDF-Lesen: {e}")
+    return text
+
+# ---------------------------------------------------------
+# GEMINI GENERIERUNG
+# ---------------------------------------------------------
+def generate_nephro_letter_gemini(api_key, anonymized_transcript, lab_data):
+    client = genai.Client(api_key=api_key)
+    
+    system_instruction = """
+    Du bist ein hochqualifizierter medizinischer Fachassistent für Nephrologie und Dialyse. 
+    Erstelle aus den bereitgestellten Visiten-Notizen und Labor-/Dialysedaten einen professionellen, 
+    strukturierten nephrolog
