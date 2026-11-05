@@ -15,9 +15,12 @@ st.set_page_config(page_title="NephroDoc AI (Pro)", page_icon="🛡️", layout=
 def check_password():
     def password_entered():
         correct_pwd = st.secrets.get("APP_PASSWORD", "nephro-secure-2026!")
-        if st.session_state["password"] == correct_pwd:
+        # Sicherer Zugriff mit .get(), falls der Key nicht existiert
+        if st.session_state.get("password", "") == correct_pwd:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]
+            # Optional: Statt löschen einfach leeren oder sicher prüfen
+            if "password" in st.session_state:
+                del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
