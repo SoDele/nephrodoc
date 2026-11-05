@@ -10,7 +10,7 @@ from google.genai import types
 # ---------------------------------------------------------
 # CYBERSECURITY: PASSWORT-SCHUTZ
 # ---------------------------------------------------------
-st.set_page_config(page_title="NephroDoc AI", page_icon="🛡️", layout="centered")
+st.set_page_config(page_title="NephroDoc AI (Pro)", page_icon="🛡️", layout="centered")
 
 def check_password():
     def password_entered():
@@ -51,27 +51,47 @@ def anonymize_text(text):
     mapping = {}
     anonymized = text
     
-    # A. Regex für Geburtsdaten & PLZ
+    # 1. ERWEITERTE REGEX-MUSTER FÜR MEDIZINISCHE STRUKTUREN
+    
+    # A. Geburtsdaten (z.B. 05.10.1989 oder 5.10.89)
     dob_pattern = r'\b\d{1,2}\.\s*\d{1,2}\.\s*\d{2,4}\b'
-    dobs = re.findall(dob_pattern, anonymized)
-    for i, dob in enumerate(set(dobs)):
+    for i, dob in enumerate(set(re.findall(dob_pattern, anonymized))):
         token = f"[GEBURTSDATUM_{i+1}]"
         mapping[token] = dob
         anonymized = anonymized.replace(dob, token)
         
+    # B. Postleitzahlen (5-stellige Zahlen)
     plz_pattern = r'\b\d{5}\b'
-    plzs = re.findall(plz_pattern, anonymized)
-    for i, plz in enumerate(set(plzs)):
+    for i, plz in enumerate(set(re.findall(plz_pattern, anonymized))):
         token = f"[PLZ_{i+1}]"
         mapping[token] = plz
         anonymized = anonymized.replace(plz, token)
 
-    # B. spaCy NER (Namen & Orte)
+    # C. Kliniken, Praxen & Institutionen (z.B. "Klinikum ...", "Praxis Dr. ...", "MVZ ...")
+    institution_patterns = [
+        r'\b(?:Klinikum|Krankenhaus|Praxis|Gemeinschaftspraxis|MVZ|Dialysezentrum|Zentrum für)\s+[A-Zäöüß][a-zäöüß]+(?:\s+[A-Zäöüß][a-zäöüß]+)*\b',
+        r'\bDr\.\s+(?:med\.\s+)?[A-Zäöüß][a-zäöüß]+(?:\s+[A-Zäöüß][a-zäöüß]+)?\b',
+        r'\bProf\.\s+(?:Dr\.\s+)?[A-Zäöüß][a-zäöüß]+(?:\s+[A-Zäöüß][a-zäöüß]+)?\b'
+    ]
+    
+    inst_idx = 1
+    for pattern in institution_patterns:
+        matches = re.findall(pattern, anonymized)
+        for match in set(matches):
+            # Nicht matchen, wenn es schon ein Token ist
+            if "[" in match:
+                continue
+            token = f"[INSTITUTION_{inst_idx}]"
+            mapping[token] = match
+            anonymized = anonymized.replace(match, token)
+            inst_idx += 1
+
+    # 2. SPACY NER FÜR RESTLICHE PERSONEN & ORTE
     doc = nlp(anonymized)
     person_idx = 1
     loc_idx = 1
     
-    ignore_words = {"geb", "geb.", "m", "w", "dr", "prof"}
+    ignore_words = {"geb", "geb.", "m", "w", "dr", "prof", "patient", "pat", "herr", "frau"}
     
     for ent in sorted(doc.ents, key=lambda e: e.start_char, reverse=True):
         cleaned_text = ent.text.strip().lower()
@@ -129,7 +149,7 @@ def generate_nephro_letter_gemini(api_key, anonymized_transcript, lab_data):
     4. Zusammenfassende Beurteilung & Empfehlungen (Prozedere)
     
     STRIKTE DATENSCHUTZ- UND PLATZHALTER-REGELN:
-    - Der Text enthält anonymisierte Tokens in eckigen Klammern (z. B. [PERSON_1], [GEBURTSDATUM_1], [ORT_1]).
+    - Der Text enthält anonymisierte Tokens in eckigen Klammern (z. B. [PERSON_1], [GEBURTSDATUM_1], [INSTITUTION_1]).
     - Du MUSST diese exakten Platzhalter im generierten Brief WORTWÖRTLICH an den passenden Stellen beibehalten.
     - Erfinde KEINE Fantasienamen und füge keine echten Personennamen ein. 
     - Gib ausschließlich den fertig formatierten Arztbrief zurück.
@@ -170,8 +190,8 @@ def generate_nephro_letter_gemini(api_key, anonymized_transcript, lab_data):
 # ---------------------------------------------------------
 # BENUTZEROBERFLÄCHE (STREAMLIT)
 # ---------------------------------------------------------
-st.title("🛡️ NephroDoc AI (Web Edition)")
-st.caption("Privacy-by-Design: Lokale Anonymisierung vor Cloud-Übergabe an Gemini")
+st.title("🛡️ NephroDoc AI (Pro Edition)")
+st.caption("Erweiterte Hybrid-Anonymisierung (Regex + NER) vor Cloud-Übergabe")
 
 api_key_input = st.text_input("Google AI Studio API Key:", type="password", value=os.getenv("GEMINI_API_KEY", ""))
 
@@ -197,7 +217,7 @@ if st.button("🚀 Anonymisieren & Arztbrief generieren", type="primary"):
             try:
                 anonymized_text, mapping = anonymize_text(transcript)
                 
-                st.subheader("🔍 Anonymisierungs-Protokoll (Mapping)")
+                st.subheader("🔍 Erweitertes Anonymisierungs-Protokoll (Mapping)")
                 if mapping:
                     for token, original in mapping.items():
                         st.text(f"{token} ➔ {original}")
